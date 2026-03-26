@@ -1,6 +1,6 @@
-// background.js — service worker; handles API calls on behalf of the popup
+// background.js — service worker; handles API calls + extension-level cache
 
-const API_BASE = 'http://localhost:5000/api';
+const API_BASE  = 'http://localhost:5000/api';
 const CACHE_TTL = 10 * 60 * 1000; // 10 minutes
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
@@ -8,39 +8,40 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     handleSearch(msg.query).then(sendResponse).catch((err) =>
       sendResponse({ error: err.message })
     );
-    return true; // keep channel open for async response
+    return true;
+  }
+
+  if (msg.type === 'CLEAR_CACHE') {
+    const key = `cache_${msg.query.toLowerCase().trim()}`;
+    chrome.storage.local.remove(key);
+    // no response needed
   }
 });
 
 async function handleSearch(query) {
   const cacheKey = `cache_${query.toLowerCase().trim()}`;
 
-  // ── Check cache ────────────────────────────────────────────────────────────
   const stored = await chromeGet(cacheKey);
   if (stored && Date.now() - stored.ts < CACHE_TTL) {
     return { ...stored.data, fromCache: true };
   }
 
-  // ── Fetch from backend ─────────────────────────────────────────────────────
   const url = `${API_BASE}/products/search?q=${encodeURIComponent(query)}`;
-  const res = await fetch(url);
+  const res  = await fetch(url);
   const json = await res.json();
 
-  if (!res.ok) throw new Error(json.message || 'Backend error');
+  if (!res.ok) throw new Error(json.message || `Backend error (${res.status})`);
 
   const result = {
-    products: json.data   || [],
-    meta:     json.meta   || {},
+    products: json.data  || [],
+    meta:     json.meta  || {},
     message:  json.message || '',
   };
 
-  // ── Store in cache ─────────────────────────────────────────────────────────
   await chromeSet(cacheKey, { data: result, ts: Date.now() });
-
   return result;
 }
 
-// Promisified chrome.storage.local helpers
 function chromeGet(key) {
   return new Promise((resolve) =>
     chrome.storage.local.get(key, (r) => resolve(r[key] ?? null))

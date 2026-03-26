@@ -166,13 +166,34 @@ main { padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
 }
 .card-link:hover { text-decoration: underline; }
 
-/* ── Cache notice ───────────────────────────────────────────────────────── */
-.cache-notice {
-  text-align: center;
-  font-size: 10px;
-  color: #94a3b8;
-  padding-bottom: 4px;
+/* ── Results meta bar ───────────────────────────────────────────────────── */
+.results-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 2px;
 }
+.badge {
+  font-size: 10px;
+  font-weight: 700;
+  border-radius: 4px;
+  padding: 2px 7px;
+}
+.badge-live  { background: #dcfce7; color: #16a34a; }
+.badge-cache { background: #e0e7ff; color: #4338ca; }
+.updated-at  { font-size: 10px; color: #94a3b8; margin-left: auto; }
+
+/* ── Partial warning ────────────────────────────────────────────────────── */
+.partial-warn {
+  font-size: 11px;
+  color: #b45309;
+  background: #fef3c7;
+  border-radius: 6px;
+  padding: 5px 8px;
+}
+
+/* ── Card top row ───────────────────────────────────────────────────────── */
+.card-top { display: flex; align-items: center; gap: 6px; }
 
 /* ── Utility ────────────────────────────────────────────────────────────── */
 .hidden { display: none !important; }

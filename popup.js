@@ -3,16 +3,16 @@
 const $ = (id) => document.getElementById(id);
 
 const ui = {
-  productBar:    $('product-bar'),
-  productName:   $('product-name'),
-  btnRefresh:    $('btn-refresh'),
-  searchInput:   $('search-input'),
-  btnSearch:     $('btn-search'),
-  spinner:       $('state-spinner'),
-  error:         $('state-error'),
-  errorMsg:      $('error-msg'),
-  empty:         $('state-empty'),
-  results:       $('results'),
+  productBar:  $('product-bar'),
+  productName: $('product-name'),
+  btnRefresh:  $('btn-refresh'),
+  searchInput: $('search-input'),
+  btnSearch:   $('btn-search'),
+  spinner:     $('state-spinner'),
+  error:       $('state-error'),
+  errorMsg:    $('error-msg'),
+  empty:       $('state-empty'),
+  results:     $('results'),
 };
 
 let currentQuery = '';
@@ -34,16 +34,18 @@ ui.btnSearch.addEventListener('click', () => {
   const q = ui.searchInput.value.trim();
   if (q) { currentQuery = q; search(q); }
 });
-
 ui.searchInput.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') ui.btnSearch.click();
 });
-
 ui.btnRefresh.addEventListener('click', () => {
-  if (currentQuery) search(currentQuery);
+  if (currentQuery) {
+    // Clear extension cache for this query so we get fresh data
+    chrome.runtime.sendMessage({ type: 'CLEAR_CACHE', query: currentQuery });
+    search(currentQuery);
+  }
 });
 
-// ── Core functions ────────────────────────────────────────────────────────────
+// ── Core ──────────────────────────────────────────────────────────────────────
 async function getPageTitle() {
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -75,10 +77,10 @@ async function search(query) {
   setState('loading');
   try {
     const data = await chrome.runtime.sendMessage({ type: 'SEARCH_PRODUCTS', query });
-    if (data.error) throw new Error(data.error);
+    if (data?.error) throw new Error(data.error);
     render(data);
   } catch (err) {
-    setState('error', err.message || 'Could not reach the backend. Is it running?');
+    setState('error', err.message || 'Could not reach the backend. Is it running on port 5000?');
   }
 }
 
@@ -88,55 +90,71 @@ function render({ products, meta, fromCache }) {
 
   setState('results');
 
-  // Find cheapest price
-  const minPrice = Math.min(...products.map((p) => p.price));
+  const minPrice   = Math.min(...products.map((p) => p.price));
+  const fetchedAt  = meta?.fetchedAt ? new Date(meta.fetchedAt) : new Date();
+  const timeStr    = fetchedAt.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+  const partialMsg = meta?.partialErrors?.length
+    ? `<p class="partial-warn">⚠ Partial results — ${meta.partialErrors.join('; ')}</p>`
+    : '';
 
-  ui.results.innerHTML = products.map((p) => {
-    const isCheapest = p.price === minPrice;
-    const stars = p.rating ? '★'.repeat(Math.round(p.rating)) + `(${p.rating})` : '';
-    return `
-      <div class="card ${isCheapest ? 'cheapest' : ''}">
-        ${isCheapest ? '<span class="card-badge">BEST PRICE</span>' : ''}
-        <div class="card-body">
-          <div class="card-platform">${esc(p.platform || '')}</div>
-          <div class="card-title">${esc(p.name || p.title || '')}</div>
-          ${stars ? `<div class="card-rating">${stars}</div>` : ''}
-        </div>
-        <div class="card-right">
-          <div class="card-price">${formatPrice(p.price, p.currency)}</div>
-          ${p.url ? `<a class="card-link" href="${p.url}" target="_blank">View →</a>` : ''}
-        </div>
-      </div>`;
-  }).join('');
-
-  if (fromCache) {
-    ui.results.insertAdjacentHTML('afterbegin', '<p class="cache-notice">⚡ Cached result</p>');
-  }
+  ui.results.innerHTML =
+    `<div class="results-meta">
+       ${fromCache
+         ? '<span class="badge badge-cache">⚡ Cached</span>'
+         : '<span class="badge badge-live">🟢 Live</span>'}
+       <span class="updated-at">Updated ${timeStr}</span>
+     </div>
+     ${partialMsg}` +
+    products.map((p) => {
+      const isCheapest = p.price === minPrice;
+      const stars = p.rating
+        ? `${'★'.repeat(Math.round(p.rating))}${'☆'.repeat(5 - Math.round(p.rating))} ${p.rating}`
+        : '';
+      return `
+        <div class="card ${isCheapest ? 'cheapest' : ''}">
+          <div class="card-body">
+            <div class="card-top">
+              <span class="card-platform">${esc(p.platform)}</span>
+              ${isCheapest ? '<span class="card-badge">BEST PRICE</span>' : ''}
+            </div>
+            <div class="card-title">${esc(p.name || p.title || '')}</div>
+            ${stars ? `<div class="card-rating">${stars}</div>` : ''}
+          </div>
+          <div class="card-right">
+            <div class="card-price">${formatInr(p.price)}</div>
+            ${p.url
+              ? `<a class="card-link" href="${esc(p.url)}" target="_blank">View →</a>`
+              : ''}
+          </div>
+        </div>`;
+    }).join('');
 }
 
 // ── State helpers ─────────────────────────────────────────────────────────────
 function setState(state, msg = '') {
   hide(ui.spinner); hide(ui.error); hide(ui.empty);
   if (state !== 'results') ui.results.innerHTML = '';
-
-  if (state === 'loading') show(ui.spinner);
-  else if (state === 'error') { ui.errorMsg.textContent = msg; show(ui.error); }
-  else if (state === 'empty') show(ui.empty);
+  if (state === 'loading')       show(ui.spinner);
+  else if (state === 'error')  { ui.errorMsg.textContent = msg; show(ui.error); }
+  else if (state === 'empty')    show(ui.empty);
 }
 
 function show(el) { el.classList.remove('hidden'); }
 function hide(el) { el.classList.add('hidden'); }
 
 // ── Utils ─────────────────────────────────────────────────────────────────────
-function esc(str) {
-  return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+function esc(str = '') {
+  return String(str)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-function formatPrice(price, currency = 'USD') {
-  if (!price && price !== 0) return 'N/A';
-  try {
-    return new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(price);
-  } catch {
-    return `$${price}`;
-  }
+/** Format a number as ₹1,23,456 (Indian locale) */
+function formatInr(price) {
+  if (price == null || isNaN(price)) return 'N/A';
+  return new Intl.NumberFormat('en-IN', {
+    style:    'currency',
+    currency: 'INR',
+    maximumFractionDigits: 0,
+  }).format(price);
 }
