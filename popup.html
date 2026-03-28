@@ -4,44 +4,61 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>PricePulse</title>
+  <!-- popup.css styles the entire popup window -->
   <link rel="stylesheet" href="popup.css" />
 </head>
 <body>
+
+  <!-- ── Header ──────────────────────────────────────────────────────────── -->
+  <!-- Always visible at the top of the popup -->
   <header>
     <span class="logo">💰 PricePulse</span>
   </header>
 
+  <!-- ── Main content area ───────────────────────────────────────────────── -->
   <main>
-    <!-- Product name row -->
+
+    <!-- Product bar: shown when a product title was auto-detected on the page.
+         Displays the detected title and a refresh button.
+         Hidden by default — popup.js shows it if a title is found. -->
     <div id="product-bar" class="hidden">
       <p id="product-name"></p>
+      <!-- Clicking ↻ clears the cache and re-fetches live prices -->
       <button id="btn-refresh" title="Refresh">↻</button>
     </div>
 
-    <!-- Manual search -->
+    <!-- Manual search bar: always visible so users can search any product
+         even if they're not on a product page -->
     <div id="search-bar">
       <input id="search-input" type="text" placeholder="Search a product…" />
       <button id="btn-search">Go</button>
     </div>
 
-    <!-- States -->
+    <!-- Loading state: shown while waiting for the backend response.
+         Hidden by default — popup.js shows it during API calls. -->
     <div id="state-spinner" class="hidden">
       <div class="spinner"></div>
       <p>Comparing prices…</p>
     </div>
 
+    <!-- Error state: shown when the backend is unreachable or returns an error.
+         The error message text is injected by popup.js. -->
     <div id="state-error" class="hidden">
       <p id="error-msg"></p>
     </div>
 
+    <!-- Empty state: shown when the backend returns zero results -->
     <div id="state-empty" class="hidden">
       <p>No results found.</p>
     </div>
 
-    <!-- Results -->
+    <!-- Results container: popup.js injects product cards here dynamically.
+         Empty by default — filled after a successful API response. -->
     <div id="results"></div>
+
   </main>
 
+  <!-- popup.js runs after the DOM is ready (script at end of body) -->
   <script src="popup.js"></script>
 </body>
 </html>
