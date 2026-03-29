@@ -35,6 +35,15 @@
     "scripting",
     "storage"
   ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' https://cdn.jsdelivr.net; object-src 'self'"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["services/priceHistoryStorage.js", "services/priceTracker.js"],
+      "matches": ["<all_urls>"]
+    }
+  ],
   "host_permissions": [
     "*://*.amazon.com/*",
     "*://*.amazon.in/*",

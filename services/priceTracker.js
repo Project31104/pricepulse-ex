@@ -1,38 +1,31 @@
 // extension/services/priceTracker.js
-
-import priceHistoryStorage from './priceHistoryStorage.js';
+// Loaded as a plain <script> tag — no ES module syntax.
+// Exposes window.trackProductPrice and window.generateProductId as globals.
 
 /**
- * Tracks price for a product by saving it to storage if conditions are met.
- * @param {Object} productInfo - The product information to track
- * @param {string} productInfo.productId
- * @param {string} productInfo.title
- * @param {number} productInfo.currentPrice
+ * trackProductPrice({ productId, title, currentPrice })
+ * Saves the current price to IndexedDB history if conditions are met
+ * (price changed or 6+ hours since last record).
  */
-export async function trackProductPrice(productInfo) {
-  const { productId, title, currentPrice } = productInfo;
-
+async function trackProductPrice({ productId, title, currentPrice }) {
   try {
-    await priceHistoryStorage.saveProductHistory(productId, title, currentPrice);
-    console.log(`Price tracked for product: ${productId}`);
+    await window.priceHistoryStorage.saveProductHistory(productId, title, currentPrice);
   } catch (error) {
     console.error('Failed to track product price:', error);
   }
 }
 
 /**
- * Generates a unique product ID from URL or title.
- * @param {string} url - The product URL
- * @param {string} title - The product title
- * @returns {string} A unique product ID
+ * generateProductId(url, title)
+ * Creates a stable short ID from a product URL or title.
+ * Used as the IndexedDB key for a product's history record.
  */
-export function generateProductId(url, title) {
-  // Use URL as primary ID, or hash of title if URL not available
-  if (url) {
-    return btoa(url).replace(/[^a-zA-Z0-9]/g, '').substring(0, 32);
-  }
-  if (title) {
-    return btoa(title).replace(/[^a-zA-Z0-9]/g, '').substring(0, 32);
-  }
-  return 'unknown';
+function generateProductId(url, title) {
+  const source = url || title || 'unknown';
+  return btoa(unescape(encodeURIComponent(source)))
+    .replace(/[^a-zA-Z0-9]/g, '')
+    .substring(0, 32);
 }
+
+window.trackProductPrice  = trackProductPrice;
+window.generateProductId  = generateProductId;
