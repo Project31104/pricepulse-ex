@@ -40,8 +40,16 @@
 
     <!-- Results -->
     <div id="results"></div>
+
+    <!-- Price History -->
+    <div id="price-history" class="hidden">
+      <h3>Price History</h3>
+      <canvas id="price-chart" width="300" height="200"></canvas>
+      <div id="price-stats"></div>
+    </div>
   </main>
 
-  <script src="popup.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script type="module" src="popup.js"></script>
 </body>
 </html>

@@ -1,5 +1,8 @@
 // popup.js
 
+import { trackProductPrice, generateProductId } from './services/priceTracker.js';
+import priceHistoryStorage from './services/priceHistoryStorage.js';
+
 const $ = (id) => document.getElementById(id);
 
 const ui = {
@@ -13,9 +16,27 @@ const ui = {
   errorMsg:    $('error-msg'),
   empty:       $('state-empty'),
   results:     $('results'),
+  priceHistory: $('price-history'),
+  priceChart: $('price-chart'),
+  priceStats: $('price-stats'),
 };
 
 let currentQuery = '';
+let currentProductId = null;
+let chart = null;
+
+// ── Boot ──────────────────────────────────────────────────────────────────────
+(async () => {
+  const { title, url } = await getPageInfo();
+  if (title) {
+    currentQuery = title;
+    currentProductId = generateProductId(url, title);
+    ui.productName.textContent = title;
+    ui.searchInput.value = title;
+    show(ui.productBar);
+    await search(title);
+  }
+})();
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
 (async () => {
@@ -46,10 +67,10 @@ ui.btnRefresh.addEventListener('click', () => {
 });
 
 // ── Core ──────────────────────────────────────────────────────────────────────
-async function getPageTitle() {
+async function getPageInfo() {
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (!tab?.id) return null;
+    if (!tab?.id) return { title: null, url: null };
     const [{ result }] = await chrome.scripting.executeScript({
       target: { tabId: tab.id },
       func: () => {
@@ -67,9 +88,9 @@ async function getPageTitle() {
         return null;
       },
     });
-    return result || null;
+    return { title: result || null, url: tab.url };
   } catch {
-    return null;
+    return { title: null, url: null };
   }
 }
 
@@ -128,11 +149,17 @@ function render({ products, meta, fromCache }) {
           </div>
         </div>`;
     }).join('');
+
+  // Track price and show history
+  if (currentProductId && currentQuery) {
+    trackProductPrice({ productId: currentProductId, title: currentQuery, currentPrice: minPrice });
+    showPriceHistory(currentProductId, currentQuery);
+  }
 }
 
 // ── State helpers ─────────────────────────────────────────────────────────────
 function setState(state, msg = '') {
-  hide(ui.spinner); hide(ui.error); hide(ui.empty);
+  hide(ui.spinner); hide(ui.error); hide(ui.empty); hide(ui.priceHistory);
   if (state !== 'results') ui.results.innerHTML = '';
   if (state === 'loading')       show(ui.spinner);
   else if (state === 'error')  { ui.errorMsg.textContent = msg; show(ui.error); }
@@ -157,4 +184,53 @@ function formatInr(price) {
     currency: 'INR',
     maximumFractionDigits: 0,
   }).format(price);
+}
+
+async function showPriceHistory(productId, title) {
+  try {
+    const history = await priceHistoryStorage.getProductHistory(productId);
+    if (!history || history.prices.length < 2) return; // Need at least 2 points for chart
+
+    show(ui.priceHistory);
+
+    // Destroy previous chart
+    if (chart) chart.destroy();
+
+    const ctx = ui.priceChart.getContext('2d');
+    const labels = history.prices.map(p => new Date(p.timestamp).toLocaleDateString());
+    const data = history.prices.map(p => p.price);
+
+    chart = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [{
+          label: 'Price (INR)',
+          data,
+          borderColor: '#6366f1',
+          backgroundColor: 'rgba(99, 102, 241, 0.1)',
+          tension: 0.1
+        }]
+      },
+      options: {
+        responsive: true,
+        scales: {
+          y: {
+            beginAtZero: false
+          }
+        }
+      }
+    });
+
+    // Show stats
+    const prices = history.prices.map(p => p.price);
+    const minPrice = Math.min(...prices);
+    const maxPrice = Math.max(...prices);
+    ui.priceStats.innerHTML = `
+      <p><strong>Lowest:</strong> ${formatInr(minPrice)}</p>
+      <p><strong>Highest:</strong> ${formatInr(maxPrice)}</p>
+    `;
+  } catch (error) {
+    console.error('Failed to show price history:', error);
+  }
 }
