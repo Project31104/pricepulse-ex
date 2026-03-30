@@ -44,7 +44,6 @@ ui.btnSearch.addEventListener('click', () => {
   const q = ui.searchInput.value.trim();
   if (!q) return;
   currentQuery     = q;
-  // For manual searches there is no product URL, so generate ID from the query text
   currentProductId = window.generateProductId(null, q);
   search(q);
 });
@@ -103,36 +102,76 @@ async function search(query) {
 }
 
 // ── render ────────────────────────────────────────────────────────────────────
+// Products arrive pre-ranked from the backend (exact → same-brand → similar → other).
+// We group them into labelled sections so the most relevant results appear first.
+//
+// matchGroup values set by backend rankProducts util:
+//   "exact"      → Best Match
+//   "same-brand" → Same Brand
+//   "similar"    → Similar Products
+//   "other"      → Other Alternatives
 function render({ products, meta, fromCache }) {
   if (!products?.length) { setState('empty'); return; }
 
   setState('results');
 
-  const minPrice  = Math.min(...products.map((p) => p.price));
-  const fetchedAt = meta?.fetchedAt ? new Date(meta.fetchedAt) : new Date();
-  const timeStr   = fetchedAt.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+  const fetchedAt  = meta?.fetchedAt ? new Date(meta.fetchedAt) : new Date();
+  const timeStr    = fetchedAt.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
   const partialMsg = meta?.partialErrors?.length
     ? `<p class="partial-warn">⚠ Partial results — ${meta.partialErrors.join('; ')}</p>`
     : '';
 
-  ui.results.innerHTML =
+  // Section config — order matters: best matches shown first
+  const GROUP_ORDER  = ['exact', 'same-brand', 'similar', 'other'];
+  const GROUP_LABELS = {
+    'exact':      'Best Match',
+    'same-brand': 'Same Brand',
+    'similar':    'Similar Products',
+    'other':      'Other Alternatives',
+  };
+  const LABEL_CLASS = {
+    'exact':      'label-exact',
+    'same-brand': 'label-same-brand',
+    'similar':    'label-similar',
+    'other':      'label-other',
+  };
+
+  // Bucket each product into its group (fall back to "other" for old cached results)
+  const groups = {};
+  for (const p of products) {
+    const g = GROUP_ORDER.includes(p.matchGroup) ? p.matchGroup : 'other';
+    (groups[g] = groups[g] || []).push(p);
+  }
+
+  // Cheapest price across ALL products (for the green BEST PRICE badge)
+  const minPrice = Math.min(...products.map((p) => p.price));
+
+  let html =
     `<div class="results-meta">
        ${fromCache
          ? '<span class="badge badge-cache">⚡ Cached</span>'
          : '<span class="badge badge-live">🟢 Live</span>'}
        <span class="updated-at">Updated ${timeStr}</span>
      </div>
-     ${partialMsg}` +
-    products.map((p) => {
+     ${partialMsg}`;
+
+  for (const group of GROUP_ORDER) {
+    if (!groups[group]?.length) continue;
+
+    html += `<div class="result-section">
+      <div class="section-header">${GROUP_LABELS[group]}</div>`;
+
+    for (const p of groups[group]) {
       const isCheapest = p.price === minPrice;
       const stars = p.rating
         ? `${'★'.repeat(Math.round(p.rating))}${'☆'.repeat(5 - Math.round(p.rating))} ${p.rating}`
         : '';
-      return `
+      html += `
         <div class="card ${isCheapest ? 'cheapest' : ''}">
           <div class="card-body">
             <div class="card-top">
               <span class="card-platform">${esc(p.platform)}</span>
+              <span class="card-label ${LABEL_CLASS[group]}">${GROUP_LABELS[group]}</span>
               ${isCheapest ? '<span class="card-badge">BEST PRICE</span>' : ''}
             </div>
             <div class="card-title">${esc(p.name || p.title || '')}</div>
@@ -143,17 +182,19 @@ function render({ products, meta, fromCache }) {
             ${p.url ? `<a class="card-link" href="${esc(p.url)}" target="_blank">View →</a>` : ''}
           </div>
         </div>`;
-    }).join('');
+    }
+    html += '</div>'; // close result-section
+  }
 
-  // Track the cheapest price seen and attempt to show history chart
+  ui.results.innerHTML = html;
+
+  // Track price and show history chart
   if (currentProductId && currentQuery) {
-    // 1. Save to local IndexedDB (works offline)
     window.trackProductPrice({
       productId:    currentProductId,
       title:        currentQuery,
       currentPrice: minPrice,
     });
-    // 2. Persist to backend DB (cross-device, long-term storage)
     chrome.runtime.sendMessage({
       type:      'RECORD_PRICE_SNAPSHOT',
       productId: currentProductId,
@@ -172,7 +213,6 @@ function render({ products, meta, fromCache }) {
 //   4. Render Chart.js line chart + lowest / highest / avg stats
 async function showPriceHistory(productId) {
   try {
-    // Fetch from both sources in parallel
     const [backendResult, localHistory] = await Promise.all([
       chrome.runtime.sendMessage({ type: 'GET_PRICE_HISTORY', productId }),
       window.priceHistoryStorage.getProductHistory(productId),
@@ -180,7 +220,7 @@ async function showPriceHistory(productId) {
 
     // Normalise backend snapshots → { dateKey, price }
     const backendPoints = (backendResult?.data ?? []).map((s) => ({
-      dateKey: s.date,          // already "YYYY-MM-DD"
+      dateKey: s.date,
       price:   s.price,
     }));
 
@@ -190,21 +230,18 @@ async function showPriceHistory(productId) {
       price:   p.price,
     }));
 
-    // Merge: use a Map keyed by date so each calendar day appears once.
-    // Backend entries overwrite local ones for the same day.
+    // Merge: one entry per calendar day; backend wins over local for same day
     const byDate = new Map();
     [...localPoints, ...backendPoints].forEach(({ dateKey, price }) => {
       byDate.set(dateKey, price);
     });
 
-    // Sort chronologically (ISO date strings sort lexicographically)
     const merged = [...byDate.entries()].sort(([a], [b]) => a.localeCompare(b));
 
     if (merged.length < 2) { hide(ui.priceHistory); return; }
 
     show(ui.priceHistory);
 
-    // Destroy previous Chart instance to avoid "Canvas already in use" error
     if (chart) { chart.destroy(); chart = null; }
 
     const labels = merged.map(([date]) =>
@@ -242,7 +279,6 @@ async function showPriceHistory(productId) {
       },
     });
 
-    // Stats: prefer backend-computed values, fall back to local calculation
     const minPrice = backendResult?.stats?.min ?? Math.min(...data);
     const maxPrice = backendResult?.stats?.max ?? Math.max(...data);
     const avgPrice = backendResult?.stats?.avg ?? Math.round(data.reduce((a, b) => a + b, 0) / data.length);

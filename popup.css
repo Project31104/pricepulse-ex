@@ -193,7 +193,34 @@ main { padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
 }
 
 /* ── Card top row ───────────────────────────────────────────────────────── */
-.card-top { display: flex; align-items: center; gap: 6px; }
+.card-top { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+
+/* ── Result sections (grouped by relevance) ─────────────────────────────── */
+.result-section { display: flex; flex-direction: column; gap: 7px; }
+
+.section-header {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .5px;
+  color: #94a3b8;
+  padding: 4px 2px 2px;
+  border-bottom: 1px solid #e2e8f0;
+  margin-bottom: 2px;
+}
+
+/* Per-card relevance label */
+.card-label {
+  font-size: 9px;
+  font-weight: 700;
+  border-radius: 4px;
+  padding: 2px 5px;
+  white-space: nowrap;
+}
+.label-exact      { background: #ede9fe; color: #6d28d9; }
+.label-same-brand { background: #dbeafe; color: #1d4ed8; }
+.label-similar    { background: #fef9c3; color: #92400e; }
+.label-other      { background: #f1f5f9; color: #64748b; }
 
 /* ── Utility ────────────────────────────────────────────────────────────── */
 .hidden { display: none !important; }
