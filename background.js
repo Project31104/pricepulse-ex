@@ -17,7 +17,7 @@
 //   CLEAR_CACHE     — delete the cached result for a query
 //                     (triggered by the ↻ refresh button in popup.js)
 
-const API_BASE  = 'http://localhost:5000/api'; // backend URL
+const API_BASE  = 'https://price-comparison-backend-ghr1.onrender.com/api'; // production backend
 const CACHE_TTL = 10 * 60 * 1000;             // cache results for 10 minutes
 
 // ── Message listener ──────────────────────────────────────────────────────────
