@@ -23,22 +23,40 @@ const CACHE_TTL = 10 * 60 * 1000;             // cache results for 10 minutes
 // ── Message listener ──────────────────────────────────────────────────────────
 // chrome.runtime.onMessage fires whenever popup.js calls
 // chrome.runtime.sendMessage({ type: "...", ... })
+// Returns true for async handlers to keep the message channel open.
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 
   if (msg.type === 'SEARCH_PRODUCTS') {
-    // Start the async search and pipe the result back to popup.js.
-    // We must return `true` to tell Chrome we'll call sendResponse asynchronously.
     handleSearch(msg.query)
       .then(sendResponse)
       .catch((err) => sendResponse({ error: err.message }));
-    return true; // keeps the message channel open for the async response
+    return true;
   }
 
   if (msg.type === 'CLEAR_CACHE') {
-    // Remove the cached entry for this query so the next search hits the backend
     const key = `cache_${msg.query.toLowerCase().trim()}`;
     chrome.storage.local.remove(key);
-    // No response needed — popup.js doesn't await this message
+    // No async response needed
+    return false;
+  }
+
+  // ── Price history ─────────────────────────────────────────────────────────
+  // The service worker proxies these to the backend so the popup doesn't
+  // need to make direct localhost fetch calls (avoids CORS issues).
+
+  if (msg.type === 'GET_PRICE_HISTORY') {
+    // GET /api/products/price-history?productId=...
+    // Returns { data: [{date, price}], stats: {min, max, avg, current} }
+    fetchPriceHistory(msg.productId)
+      .then(sendResponse)
+      .catch((err) => sendResponse({ error: err.message }));
+    return true; // async — keep channel open
+  }
+
+  if (msg.type === 'RECORD_PRICE_SNAPSHOT') {
+    // POST /api/products/price-history — fire-and-forget, no response needed
+    recordPriceSnapshot(msg.productId, msg.title, msg.price).catch(() => {});
+    return false;
   }
 });
 
@@ -97,3 +115,41 @@ function chromeSet(key, value) {
     chrome.storage.local.set({ [key]: value }, resolve)
   );
 }
+
+// ── fetchPriceHistory ──────────────────────────────────────────────────────────────
+/**
+ * Calls GET /api/products/price-history?productId=<id>
+ * Returns the backend envelope's data field:
+ *   { data: [{date, price}], stats: {min, max, avg, current} }
+ * On network failure returns { data: [], stats: null } so the popup
+ * degrades gracefully to the local IndexedDB history.
+ */
+async function fetchPriceHistory(productId) {
+  try {
+    const res  = await fetch(`${API_BASE}/products/price-history?productId=${encodeURIComponent(productId)}`);
+    const json = await res.json();
+    if (!res.ok) throw new Error(json.message || `Backend error (${res.status})`);
+    // json.data holds { data: [...], stats: {...} }
+    return json.data ?? { data: [], stats: null };
+  } catch {
+    return { data: [], stats: null };
+  }
+}
+
+// ── recordPriceSnapshot ──────────────────────────────────────────────────────────
+/**
+ * Calls POST /api/products/price-history to persist a price snapshot.
+ * Fire-and-forget — errors are silently swallowed so a backend outage
+ * never breaks the popup's main search flow.
+ */
+async function recordPriceSnapshot(productId, title, price) {
+  const res = await fetch(`${API_BASE}/products/price-history`, {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify({ productId, title, price }),
+  });
+  if (!res.ok) {
+    const json = await res.json().catch(() => ({}));
+    throw new Error(json.message || `Backend error (${res.status})`);
+  }
+} 

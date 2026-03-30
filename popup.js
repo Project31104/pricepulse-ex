@@ -147,51 +147,82 @@ function render({ products, meta, fromCache }) {
 
   // Track the cheapest price seen and attempt to show history chart
   if (currentProductId && currentQuery) {
+    // 1. Save to local IndexedDB (works offline)
     window.trackProductPrice({
       productId:    currentProductId,
       title:        currentQuery,
       currentPrice: minPrice,
+    });
+    // 2. Persist to backend DB (cross-device, long-term storage)
+    chrome.runtime.sendMessage({
+      type:      'RECORD_PRICE_SNAPSHOT',
+      productId: currentProductId,
+      title:     currentQuery,
+      price:     minPrice,
     });
     showPriceHistory(currentProductId);
   }
 }
 
 // ── showPriceHistory ──────────────────────────────────────────────────────────
+// Data flow:
+//   1. Ask background.js for backend history (GET /api/products/price-history)
+//   2. Also read local IndexedDB history (works offline)
+//   3. Merge both sources, de-duplicate by date string, sort chronologically
+//   4. Render Chart.js line chart + lowest / highest / avg stats
 async function showPriceHistory(productId) {
   try {
-    const history = await window.priceHistoryStorage.getProductHistory(productId);
+    // Fetch from both sources in parallel
+    const [backendResult, localHistory] = await Promise.all([
+      chrome.runtime.sendMessage({ type: 'GET_PRICE_HISTORY', productId }),
+      window.priceHistoryStorage.getProductHistory(productId),
+    ]);
 
-    // Need at least 2 data points to draw a meaningful chart
-    if (!history || history.prices.length < 2) {
-      hide(ui.priceHistory);
-      return;
-    }
+    // Normalise backend snapshots → { dateKey, price }
+    const backendPoints = (backendResult?.data ?? []).map((s) => ({
+      dateKey: s.date,          // already "YYYY-MM-DD"
+      price:   s.price,
+    }));
+
+    // Normalise local IndexedDB snapshots → { dateKey, price }
+    const localPoints = (localHistory?.prices ?? []).map((p) => ({
+      dateKey: new Date(p.timestamp).toISOString().split('T')[0],
+      price:   p.price,
+    }));
+
+    // Merge: use a Map keyed by date so each calendar day appears once.
+    // Backend entries overwrite local ones for the same day.
+    const byDate = new Map();
+    [...localPoints, ...backendPoints].forEach(({ dateKey, price }) => {
+      byDate.set(dateKey, price);
+    });
+
+    // Sort chronologically (ISO date strings sort lexicographically)
+    const merged = [...byDate.entries()].sort(([a], [b]) => a.localeCompare(b));
+
+    if (merged.length < 2) { hide(ui.priceHistory); return; }
 
     show(ui.priceHistory);
 
-    // Destroy the previous Chart instance before creating a new one,
-    // otherwise Chart.js throws "Canvas is already in use"
-    if (chart) {
-      chart.destroy();
-      chart = null;
-    }
+    // Destroy previous Chart instance to avoid "Canvas already in use" error
+    if (chart) { chart.destroy(); chart = null; }
 
-    const labels = history.prices.map((p) =>
-      new Date(p.timestamp).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })
+    const labels = merged.map(([date]) =>
+      new Date(date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })
     );
-    const data = history.prices.map((p) => p.price);
+    const data = merged.map(([, price]) => price);
 
     chart = new Chart(ui.priceChart.getContext('2d'), {
       type: 'line',
       data: {
         labels,
         datasets: [{
-          label:           'Price (₹)',
+          label:                'Price (₹)',
           data,
-          borderColor:     '#6366f1',
-          backgroundColor: 'rgba(99,102,241,0.08)',
-          tension:         0.3,
-          pointRadius:     4,
+          borderColor:          '#6366f1',
+          backgroundColor:      'rgba(99,102,241,0.08)',
+          tension:              0.3,
+          pointRadius:          4,
           pointBackgroundColor: '#6366f1',
         }],
       },
@@ -199,34 +230,31 @@ async function showPriceHistory(productId) {
         responsive: true,
         plugins: {
           legend: { display: false },
-          tooltip: {
-            callbacks: {
-              // Show ₹ formatted price in the tooltip
-              label: (ctx) => ` ${formatInr(ctx.parsed.y)}`,
-            },
-          },
+          tooltip: { callbacks: { label: (ctx) => ` ${formatInr(ctx.parsed.y)}` } },
         },
         scales: {
           y: {
             beginAtZero: false,
-            ticks: {
-              // Show ₹ symbol on Y-axis tick labels
-              callback: (val) => formatInr(val),
-              font: { size: 10 },
-            },
+            ticks: { callback: (val) => formatInr(val), font: { size: 10 } },
           },
           x: { ticks: { font: { size: 10 } } },
         },
       },
     });
 
-    // Show lowest / highest stats below the chart
-    const prices   = history.prices.map((p) => p.price);
-    const minPrice = Math.min(...prices);
-    const maxPrice = Math.max(...prices);
+    // Stats: prefer backend-computed values, fall back to local calculation
+    const minPrice = backendResult?.stats?.min ?? Math.min(...data);
+    const maxPrice = backendResult?.stats?.max ?? Math.max(...data);
+    const avgPrice = backendResult?.stats?.avg ?? Math.round(data.reduce((a, b) => a + b, 0) / data.length);
+    const current  = backendResult?.stats?.current ?? data[data.length - 1];
+    const goodDeal = current <= avgPrice;
+
     ui.priceStats.innerHTML = `
-      <p><strong>Lowest:</strong> ${formatInr(minPrice)}</p>
+      <p><strong>Lowest:</strong>  ${formatInr(minPrice)}</p>
       <p><strong>Highest:</strong> ${formatInr(maxPrice)}</p>
+      <p><strong>Avg:</strong>     ${formatInr(avgPrice)}
+        ${goodDeal ? '<span style="color:#16a34a;font-weight:700"> ✓ Good deal</span>' : ''}
+      </p>
     `;
   } catch (err) {
     console.error('Failed to show price history:', err);
