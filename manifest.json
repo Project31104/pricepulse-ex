@@ -52,6 +52,6 @@
     "*://*.etsy.com/*",
     "*://*.myntra.com/*",
     "*://*.snapdeal.com/*",
-    "http://localhost:5000/*"
+    "https://pricepulse-be.onrender.com/*"
   ]
 }

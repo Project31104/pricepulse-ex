@@ -17,8 +17,9 @@
 //   CLEAR_CACHE     — delete the cached result for a query
 //                     (triggered by the ↻ refresh button in popup.js)
 
-const API_BASE  = 'https://price-comparison-backend-ghr1.onrender.com/api'; // production backend
-const CACHE_TTL = 10 * 60 * 1000;             // cache results for 10 minutes
+const API_BASE  = 'https://pricepulse-be.onrender.com/api';
+const CACHE_TTL = 10 * 60 * 1000;
+const RETRY_DELAY_MS = 8000; // Render cold-start can take ~7-10s
 
 // ── Message listener ──────────────────────────────────────────────────────────
 // chrome.runtime.onMessage fires whenever popup.js calls
@@ -79,13 +80,19 @@ async function handleSearch(query) {
     return { ...stored.data, fromCache: true };
   }
 
-  // Cache miss — call the backend search API
+  // Cache miss — call the backend search API (retry once for Render cold start)
   const url = `${API_BASE}/products/search?q=${encodeURIComponent(query)}`;
-  const res  = await fetch(url);
+  console.log('[PricePulse] Fetching:', url);
+  let res;
+  try {
+    res = await fetch(url);
+  } catch (networkErr) {
+    console.warn('[PricePulse] First attempt failed, retrying after cold-start delay…', networkErr.message);
+    await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
+    res = await fetch(url);
+  }
+  console.log('[PricePulse] Response status:', res.status);
   const json = await res.json();
-
-  // If the backend returned an error status, throw so the catch in the listener
-  // sends { error: "..." } back to popup.js
   if (!res.ok) throw new Error(json.message || `Backend error (${res.status})`);
 
   // Normalise the backend envelope into the shape popup.js expects
@@ -129,9 +136,9 @@ async function fetchPriceHistory(productId) {
     const res  = await fetch(`${API_BASE}/products/price-history?productId=${encodeURIComponent(productId)}`);
     const json = await res.json();
     if (!res.ok) throw new Error(json.message || `Backend error (${res.status})`);
-    // json.data holds { data: [...], stats: {...} }
     return json.data ?? { data: [], stats: null };
-  } catch {
+  } catch (err) {
+    console.warn('[PricePulse] fetchPriceHistory failed:', err.message);
     return { data: [], stats: null };
   }
 }

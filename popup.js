@@ -7,24 +7,26 @@
 const $ = (id) => document.getElementById(id);
 
 const ui = {
-  productBar:   $('product-bar'),
-  productName:  $('product-name'),
-  btnRefresh:   $('btn-refresh'),
-  searchInput:  $('search-input'),
-  btnSearch:    $('btn-search'),
-  spinner:      $('state-spinner'),
-  error:        $('state-error'),
-  errorMsg:     $('error-msg'),
-  empty:        $('state-empty'),
-  results:      $('results'),
-  priceHistory: $('price-history'),
-  priceChart:   $('price-chart'),
-  priceStats:   $('price-stats'),
+  productBar:     $('product-bar'),
+  productName:    $('product-name'),
+  btnRefresh:     $('btn-refresh'),
+  searchInput:    $('search-input'),
+  btnSearch:      $('btn-search'),
+  spinner:        $('state-spinner'),
+  coldStartHint:  $('cold-start-hint'),
+  error:          $('state-error'),
+  errorMsg:       $('error-msg'),
+  empty:          $('state-empty'),
+  results:        $('results'),
+  priceHistory:   $('price-history'),
+  priceChart:     $('price-chart'),
+  priceStats:     $('price-stats'),
 };
 
 let currentQuery     = '';
 let currentProductId = null;
 let chart            = null;
+let coldStartTimer   = null;
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
 (async () => {
@@ -97,7 +99,8 @@ async function search(query) {
     if (data?.error) throw new Error(data.error);
     render(data);
   } catch (err) {
-    setState('error', err.message || 'Could not reach the backend. Is it running on port 5000?');
+    console.error('[PricePulse] Search failed:', err);
+    setState('error', err.message || 'Could not reach the backend. It may be waking up — please try again in a few seconds.');
   }
 }
 
@@ -300,14 +303,22 @@ async function showPriceHistory(productId) {
 
 // ── setState ──────────────────────────────────────────────────────────────────
 function setState(state, msg = '') {
+  clearTimeout(coldStartTimer);
   hide(ui.spinner);
   hide(ui.error);
   hide(ui.empty);
   hide(ui.priceHistory);
   if (state !== 'results') ui.results.innerHTML = '';
-  if      (state === 'loading') show(ui.spinner);
-  else if (state === 'error')  { ui.errorMsg.textContent = msg; show(ui.error); }
-  else if (state === 'empty')    show(ui.empty);
+  if (state === 'loading') {
+    show(ui.spinner);
+    hide(ui.coldStartHint);
+    coldStartTimer = setTimeout(() => show(ui.coldStartHint), 5000);
+  } else if (state === 'error') {
+    ui.errorMsg.textContent = msg;
+    show(ui.error);
+  } else if (state === 'empty') {
+    show(ui.empty);
+  }
 }
 
 function show(el) { if (el) el.classList.remove('hidden'); }
