@@ -124,10 +124,10 @@ function render({ products, meta, fromCache }) {
   // Section config — order matters: best matches shown first
   const GROUP_ORDER  = ['exact', 'same-brand', 'similar', 'other'];
   const GROUP_LABELS = {
-    'exact':      'Best Match',
-    'same-brand': 'Same Brand',
-    'similar':    'Similar Products',
-    'other':      'Other Alternatives',
+    'exact':      '🔥 Best Match',
+    'same-brand': '🏷️ Same Brand',
+    'similar':    '✦ Similar Products',
+    'other':      '◈ Other Alternatives',
   };
   const LABEL_CLASS = {
     'exact':      'label-exact',

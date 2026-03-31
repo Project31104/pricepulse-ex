@@ -4,67 +4,61 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>PricePulse</title>
-  <!-- popup.css styles the entire popup window -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" />
   <link rel="stylesheet" href="popup.css" />
 </head>
 <body>
 
   <!-- ── Header ──────────────────────────────────────────────────────────── -->
-  <!-- Always visible at the top of the popup -->
   <header>
     <span class="logo">
-      <img src="icons/icon128.png" alt="" class="logo-icon" />
-      PricePulse
+      <img src="icons/icon48.png" alt="" class="logo-icon" />
+      <span class="logo-text">PricePulse</span>
     </span>
   </header>
 
   <!-- ── Main content area ───────────────────────────────────────────────── -->
   <main>
 
-    <!-- Product bar: shown when a product title was auto-detected on the page.
-         Displays the detected title and a refresh button.
-         Hidden by default — popup.js shows it if a title is found. -->
+    <!-- Product bar: auto-detected product title + refresh button -->
     <div id="product-bar" class="hidden">
       <p id="product-name"></p>
-      <!-- Clicking ↻ clears the cache and re-fetches live prices -->
-      <button id="btn-refresh" title="Refresh">↻</button>
+      <button id="btn-refresh" title="Refresh prices">↻</button>
     </div>
 
-    <!-- Manual search bar: always visible so users can search any product
-         even if they're not on a product page -->
+    <!-- Manual search bar -->
     <div id="search-bar">
-      <input id="search-input" type="text" placeholder="Search a product…" />
-      <button id="btn-search">Go</button>
+      <input id="search-input" type="text" placeholder="🔍  Search a product…" />
+      <button id="btn-search">Search</button>
     </div>
 
-    <!-- Loading state: shown while waiting for the backend response.
-         Hidden by default — popup.js shows it during API calls. -->
+    <!-- Loading state -->
     <div id="state-spinner" class="hidden">
       <div class="spinner"></div>
       <p>Comparing prices…</p>
     </div>
 
-    <!-- Error state: shown when the backend is unreachable or returns an error.
-         The error message text is injected by popup.js. -->
+    <!-- Error state -->
     <div id="state-error" class="hidden">
       <p id="error-msg"></p>
     </div>
 
-    <!-- Empty state: shown when the backend returns zero results -->
+    <!-- Empty state -->
     <div id="state-empty" class="hidden">
-      <p>No results found.</p>
+      <p>✦ No results found</p>
     </div>
 
-    <!-- Results container: popup.js injects product cards here dynamically.
-         Empty by default — filled after a successful API response. -->
+    <!-- Results container -->
     <div id="results"></div>
 
     <!-- Price History -->
     <div id="price-history" class="hidden">
-      <h3>Price History</h3>
-      <canvas id="price-chart" width="300" height="200"></canvas>
+      <h3>📈 Price History</h3>
+      <canvas id="price-chart" width="300" height="180"></canvas>
       <div id="price-stats"></div>
     </div>
+
   </main>
 
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
